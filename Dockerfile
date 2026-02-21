@@ -1,14 +1,22 @@
 FROM python:3.12-slim
 
-# System deps + Cairo font
+# System deps
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        fonts-cairo \
-        libgl1-mesa-glx \
-        libglib2.0-0 \
+    curl \
+    unzip \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Download Cairo font
+RUN mkdir -p /app/fonts && \
+    curl -L -o /tmp/cairo.zip "https://fonts.google.com/download?family=Cairo" && \
+    unzip -j /tmp/cairo.zip -d /app/fonts "*.ttf" || \
+    (unzip -d /tmp/cairo /tmp/cairo.zip && find /tmp/cairo -name "*.ttf" -exec cp {} /app/fonts/ \;) && \
+    rm -rf /tmp/cairo*
 
 # Install Python deps
 COPY requirements.txt .
@@ -17,10 +25,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy app
 COPY grid_engine.py .
 COPY main.py .
-
-# Create fonts symlink for easier access
-RUN mkdir -p /app/fonts && \
-    ln -sf /usr/share/fonts/truetype/cairo/* /app/fonts/ 2>/dev/null || true
 
 # Env defaults
 ENV GRID_TARGET_SIZE=1200
