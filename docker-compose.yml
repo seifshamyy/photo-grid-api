@@ -1,0 +1,18 @@
+services:
+  photo-grid-api:
+    build: .
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    environment:
+      - PORT=${PORT:-8000}
+      - GRID_TARGET_SIZE=${GRID_TARGET_SIZE:-1200}
+      - GRID_JPEG_QUALITY=${GRID_JPEG_QUALITY:-92}
+      - GRID_MAX_PHOTOS=${GRID_MAX_PHOTOS:-10}
+      - GRID_DOWNLOAD_TIMEOUT=${GRID_DOWNLOAD_TIMEOUT:-30}
+      - GRID_FONT_PATH=${GRID_FONT_PATH:-}
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3

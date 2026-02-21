@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: photo-grid-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: GRID_TARGET_SIZE
+        value: 1200
+      - key: GRID_JPEG_QUALITY
+        value: 92
