@@ -9,8 +9,6 @@ import os
 import math
 import glob
 import requests
-import arabic_reshaper
-from bidi.algorithm import get_display
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 
@@ -224,16 +222,10 @@ def overlay_text(canvas: Image.Image, text: str, font_path: str = None) -> Image
     font_size = max(28, canvas.width // 25)
     font = _resolve_font(font_path, font_size)
 
-    reshaped_text = arabic_reshaper.reshape(text)
-    bidi_text = get_display(reshaped_text)
+    # Use Pillow's native Raqm layout for Arabic text shaping
+    kwargs = {"font": font, "direction": "rtl", "language": "ar"}
+    bbox = draw.textbbox((0, 0), text, **kwargs)
     
-    # Strip invisible bidi formatting characters that render as empty square boxes
-    # python-bidi specifically injects LRE (U+202A), RLE (U+202B), PDF (U+202C), LRM (U+200E), RLM (U+200F)
-    invisible_chars = ['\u200e', '\u200f', '\u202a', '\u202b', '\u202c', '\u202d', '\u202e']
-    for char in invisible_chars:
-        bidi_text = bidi_text.replace(char, '')
-
-    bbox = draw.textbbox((0, 0), bidi_text, font=font)
     # textbbox returns (left, top, right, bottom) offset from the anchor (0, 0)
     # The actual visual width and height of the text:
     tw = bbox[2] - bbox[0]
@@ -260,7 +252,7 @@ def overlay_text(canvas: Image.Image, text: str, font_path: str = None) -> Image
     text_x = rect_x0 + padding - bbox[0]
     text_y = rect_y0 + padding - bbox[1]
     
-    draw.text((text_x, text_y), bidi_text, fill=(255, 255, 255, 255), font=font)
+    draw.text((text_x, text_y), text, fill=(255, 255, 255, 255), **kwargs)
 
     return canvas.convert("RGB")
 

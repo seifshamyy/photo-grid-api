@@ -1,7 +1,8 @@
+import sys
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-text = 'الكوموا'
+text = 'كونكوا - صوفا رئيسية'
 
 reshaped_text = arabic_reshaper.reshape(text)
 bidi_text = get_display(reshaped_text)
