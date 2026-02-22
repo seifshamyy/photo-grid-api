@@ -228,6 +228,7 @@ def overlay_text(canvas: Image.Image, text: str, font_path: str = None) -> Image
     bidi_text = get_display(reshaped_text)
     
     # Strip invisible bidi formatting characters that render as empty square boxes
+    # python-bidi specifically injects LRE (U+202A), RLE (U+202B), PDF (U+202C), LRM (U+200E), RLM (U+200F)
     invisible_chars = ['\u200e', '\u200f', '\u202a', '\u202b', '\u202c', '\u202d', '\u202e']
     for char in invisible_chars:
         bidi_text = bidi_text.replace(char, '')
