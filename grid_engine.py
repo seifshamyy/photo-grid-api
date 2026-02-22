@@ -226,8 +226,15 @@ def overlay_text(canvas: Image.Image, text: str, font_path: str = None) -> Image
 
     reshaped_text = arabic_reshaper.reshape(text)
     bidi_text = get_display(reshaped_text)
+    
+    # Strip invisible bidi formatting characters that render as empty square boxes
+    invisible_chars = ['\u200e', '\u200f', '\u202a', '\u202b', '\u202c', '\u202d', '\u202e']
+    for char in invisible_chars:
+        bidi_text = bidi_text.replace(char, '')
 
     bbox = draw.textbbox((0, 0), bidi_text, font=font)
+    # textbbox returns (left, top, right, bottom) offset from the anchor (0, 0)
+    # The actual visual width and height of the text:
     tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]
 
@@ -246,7 +253,13 @@ def overlay_text(canvas: Image.Image, text: str, font_path: str = None) -> Image
     canvas = Image.alpha_composite(canvas, overlay)
 
     draw = ImageDraw.Draw(canvas)
-    draw.text((rect_x0 + padding, rect_y0 + padding), bidi_text, fill=(255, 255, 255, 255), font=font)
+    
+    # Calculate exact drawing position to perfectly center the text within the padded block
+    # We subtract bbox[0] and bbox[1] to neutralize Pillow's internal anchor offsetting
+    text_x = rect_x0 + padding - bbox[0]
+    text_y = rect_y0 + padding - bbox[1]
+    
+    draw.text((text_x, text_y), bidi_text, fill=(255, 255, 255, 255), font=font)
 
     return canvas.convert("RGB")
 
