@@ -5,11 +5,12 @@ Photo Grid Engine
 - Minimizes crop loss
 - Overlays item_name in Cairo font (bottom-left)
 """
-
 import os
 import math
 import glob
 import requests
+import arabic_reshaper
+from bidi.algorithm import get_display
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 
@@ -223,7 +224,10 @@ def overlay_text(canvas: Image.Image, text: str, font_path: str = None) -> Image
     font_size = max(28, canvas.width // 25)
     font = _resolve_font(font_path, font_size)
 
-    bbox = draw.textbbox((0, 0), text, font=font)
+    reshaped_text = arabic_reshaper.reshape(text)
+    bidi_text = get_display(reshaped_text)
+
+    bbox = draw.textbbox((0, 0), bidi_text, font=font)
     tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]
 
@@ -242,7 +246,7 @@ def overlay_text(canvas: Image.Image, text: str, font_path: str = None) -> Image
     canvas = Image.alpha_composite(canvas, overlay)
 
     draw = ImageDraw.Draw(canvas)
-    draw.text((rect_x0 + padding, rect_y0 + padding), text, fill=(255, 255, 255, 255), font=font)
+    draw.text((rect_x0 + padding, rect_y0 + padding), bidi_text, fill=(255, 255, 255, 255), font=font)
 
     return canvas.convert("RGB")
 
