@@ -11,12 +11,10 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Download Cairo font
+# Download Cairo font directly
 RUN mkdir -p /app/fonts && \
-    curl -L -o /tmp/cairo.zip "https://github.com/googlefonts/cairo/archive/refs/heads/master.zip" && \
-    unzip -j /tmp/cairo.zip -d /app/fonts "*.ttf" || \
-    (unzip -d /tmp/cairo /tmp/cairo.zip && find /tmp/cairo -name "*.ttf" -exec cp {} /app/fonts/ \;) && \
-    rm -rf /tmp/cairo*
+    curl -sL -o /app/fonts/Cairo-Regular.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf" && \
+    cp /app/fonts/Cairo-Regular.ttf /app/fonts/Cairo-Bold.ttf
 
 # Install Python deps
 COPY requirements.txt .
