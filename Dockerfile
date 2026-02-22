@@ -13,7 +13,7 @@ WORKDIR /app
 
 # Download Cairo font
 RUN mkdir -p /app/fonts && \
-    curl -L -o /tmp/cairo.zip "https://fonts.google.com/download?family=Cairo" && \
+    curl -L -o /tmp/cairo.zip "https://github.com/googlefonts/cairo/archive/refs/heads/master.zip" && \
     unzip -j /tmp/cairo.zip -d /app/fonts "*.ttf" || \
     (unzip -d /tmp/cairo /tmp/cairo.zip && find /tmp/cairo -name "*.ttf" -exec cp {} /app/fonts/ \;) && \
     rm -rf /tmp/cairo*
