@@ -1,8 +1,8 @@
 """
 Photo Grid Engine
 - Identifies aspect ratios of all photos
-- Arranges in a grid targeting 1:1 output aspect ratio
-- Minimizes crop loss
+- Arranges in a grid prioritizing minimal crop loss
+- Output AR is flexible (1:2 to 2:1), not forced 1:1
 - Overlays item_name in Cairo font (bottom-left)
 """
 import os
@@ -48,7 +48,7 @@ def fit_and_crop(img: Image.Image, cell_w: int, cell_h: int) -> Image.Image:
 def score_layout(images: list, cells: list, canvas_w: int, canvas_h: int) -> float:
     """
     Score a layout. Lower is better.
-    Combines crop loss + deviation from 1:1 aspect ratio.
+    Crop loss is the dominant factor; AR deviation is a mild tiebreaker.
     """
     crop_loss = sum(
         compute_crop_loss(images[idx].width, images[idx].height, cw, ch)
@@ -56,116 +56,174 @@ def score_layout(images: list, cells: list, canvas_w: int, canvas_h: int) -> flo
         if cw > 0 and ch > 0
     )
     output_ar = canvas_w / canvas_h
-    ar_penalty = abs(output_ar - 1.0) * 2.0
+    ar_penalty = abs(output_ar - 1.0) * 0.3
     return crop_loss + ar_penalty
+
+
+# AR limits — output can range from 1:2 (tall) to 2:1 (wide)
+MIN_AR = 0.5
+MAX_AR = 2.0
+
+
+def _clamp_ar(width: int, height: int) -> tuple[int, int]:
+    """Clamp canvas dimensions to stay within MIN_AR..MAX_AR."""
+    ar = width / height
+    if ar > MAX_AR:
+        height = int(width / MAX_AR)
+    elif ar < MIN_AR:
+        width = int(height * MIN_AR)
+    return width, height
 
 
 def find_best_layout(images: list, target_size: int = 1200) -> dict:
     """
-    Find the grid layout closest to 1:1 with minimal crop loss.
+    Find the grid layout that minimizes crop loss.
+    Output aspect ratio is flexible (up to 2:1 or 1:2).
     """
     n = len(images)
     gap = 4
 
     if n == 1:
+        img = images[0]
+        ar = img.width / img.height
+        ar = max(MIN_AR, min(MAX_AR, ar))
+        if ar >= 1.0:
+            w = target_size
+            h = int(target_size / ar)
+        else:
+            h = target_size
+            w = int(target_size * ar)
         return {
-            "type": "single", "width": target_size, "height": target_size,
-            "gap": 0, "cells": [(0, 0, target_size, target_size, 0)],
+            "type": "single", "width": w, "height": h,
+            "gap": 0, "cells": [(0, 0, w, h, 0)],
         }
 
     best_score = float("inf")
     best_layout = None
 
-    if n == 2:
-        # Side by side — sweep split ratio
-        for split_pct in [x / 100.0 for x in range(20, 81, 2)]:
-            w0 = int(target_size * split_pct) - gap // 2
-            w1 = target_size - w0 - gap
-            h = target_size
-            if w0 < 50 or w1 < 50:
-                continue
-            cells = [(0, 0, w0, h, 0), (w0 + gap, 0, w1, h, 1)]
-            sc = score_layout(images, cells, target_size, h)
-            if sc < best_score:
-                best_score = sc
-                best_layout = {"type": "side_by_side", "width": target_size, "height": h, "gap": gap, "cells": cells}
+    # Height multipliers to sweep — allows canvas to be shorter or taller
+    height_factors = [x / 100.0 for x in range(50, 151, 5)]
 
-        # Stacked — sweep split ratio
-        for split_pct in [x / 100.0 for x in range(20, 81, 2)]:
-            h0 = int(target_size * split_pct) - gap // 2
-            h1 = target_size - h0 - gap
-            w = target_size
-            if h0 < 50 or h1 < 50:
+    if n == 2:
+        # Side by side — sweep split ratio AND canvas height
+        for h_factor in height_factors:
+            h = int(target_size * h_factor)
+            if h < 100:
                 continue
-            cells = [(0, 0, w, h0, 0), (0, h0 + gap, w, h1, 1)]
-            total_h = h0 + gap + h1
-            sc = score_layout(images, cells, w, total_h)
-            if sc < best_score:
-                best_score = sc
-                best_layout = {"type": "stacked", "width": w, "height": total_h, "gap": gap, "cells": cells}
+            for split_pct in [x / 100.0 for x in range(20, 81, 2)]:
+                w0 = int(target_size * split_pct) - gap // 2
+                w1 = target_size - w0 - gap
+                if w0 < 50 or w1 < 50:
+                    continue
+                cw, ch = _clamp_ar(target_size, h)
+                # Recompute cell heights after clamp
+                cell_h = ch
+                cells = [(0, 0, w0, cell_h, 0), (w0 + gap, 0, w1, cell_h, 1)]
+                sc = score_layout(images, cells, cw, ch)
+                if sc < best_score:
+                    best_score = sc
+                    best_layout = {"type": "side_by_side", "width": cw, "height": ch, "gap": gap, "cells": cells}
+
+        # Stacked — sweep split ratio AND canvas width
+        for w_factor in height_factors:
+            w = int(target_size * w_factor)
+            if w < 100:
+                continue
+            for split_pct in [x / 100.0 for x in range(20, 81, 2)]:
+                h0 = int(target_size * split_pct) - gap // 2
+                h1 = target_size - h0 - gap
+                if h0 < 50 or h1 < 50:
+                    continue
+                total_h = h0 + gap + h1
+                cw, ch = _clamp_ar(w, total_h)
+                cells = [(0, 0, cw, h0, 0), (0, h0 + gap, cw, h1, 1)]
+                sc = score_layout(images, cells, cw, ch)
+                if sc < best_score:
+                    best_score = sc
+                    best_layout = {"type": "stacked", "width": cw, "height": ch, "gap": gap, "cells": cells}
 
     elif n == 3:
         for big_idx in range(3):
             small_indices = [i for i in range(3) if i != big_idx]
 
-            # Big LEFT, two stacked RIGHT
-            for f in [x / 100.0 for x in range(30, 71, 2)]:
-                w_big = int(target_size * f) - gap // 2
-                w_small = target_size - w_big - gap
-                total_h = target_size
-                for split_v in [x / 100.0 for x in range(25, 76, 5)]:
-                    h_s0 = int(total_h * split_v) - gap // 2
-                    h_s1 = total_h - h_s0 - gap
-                    if w_big < 50 or w_small < 50 or h_s0 < 50 or h_s1 < 50:
-                        continue
-                    cells = [
-                        (0, 0, w_big, total_h, big_idx),
-                        (w_big + gap, 0, w_small, h_s0, small_indices[0]),
-                        (w_big + gap, h_s0 + gap, w_small, h_s1, small_indices[1]),
-                    ]
-                    sc = score_layout(images, cells, target_size, total_h)
-                    if sc < best_score:
-                        best_score = sc
-                        best_layout = {"type": "1big_2small_LR", "width": target_size, "height": total_h, "gap": gap, "cells": cells}
+            # Big LEFT, two stacked RIGHT — sweep total height
+            for h_factor in height_factors:
+                total_h = int(target_size * h_factor)
+                if total_h < 100:
+                    continue
+                for f in [x / 100.0 for x in range(30, 71, 2)]:
+                    w_big = int(target_size * f) - gap // 2
+                    w_small = target_size - w_big - gap
+                    for split_v in [x / 100.0 for x in range(25, 76, 5)]:
+                        h_s0 = int(total_h * split_v) - gap // 2
+                        h_s1 = total_h - h_s0 - gap
+                        if w_big < 50 or w_small < 50 or h_s0 < 50 or h_s1 < 50:
+                            continue
+                        cw, ch = _clamp_ar(target_size, total_h)
+                        cells = [
+                            (0, 0, w_big, total_h, big_idx),
+                            (w_big + gap, 0, w_small, h_s0, small_indices[0]),
+                            (w_big + gap, h_s0 + gap, w_small, h_s1, small_indices[1]),
+                        ]
+                        sc = score_layout(images, cells, cw, ch)
+                        if sc < best_score:
+                            best_score = sc
+                            best_layout = {"type": "1big_2small_LR", "width": target_size, "height": total_h, "gap": gap, "cells": cells}
 
-            # Big TOP, two side by side BOTTOM
-            for f in [x / 100.0 for x in range(30, 71, 2)]:
-                h_big = int(target_size * f) - gap // 2
-                h_small = target_size - h_big - gap
-                total_w = target_size
-                for split_h in [x / 100.0 for x in range(25, 76, 5)]:
-                    w_s0 = int(total_w * split_h) - gap // 2
-                    w_s1 = total_w - w_s0 - gap
-                    if h_big < 50 or h_small < 50 or w_s0 < 50 or w_s1 < 50:
-                        continue
-                    cells = [
-                        (0, 0, total_w, h_big, big_idx),
-                        (0, h_big + gap, w_s0, h_small, small_indices[0]),
-                        (w_s0 + gap, h_big + gap, w_s1, h_small, small_indices[1]),
-                    ]
-                    sc = score_layout(images, cells, total_w, target_size)
-                    if sc < best_score:
-                        best_score = sc
-                        best_layout = {"type": "1big_2small_TB", "width": total_w, "height": target_size, "gap": gap, "cells": cells}
+            # Big TOP, two side by side BOTTOM — sweep total height
+            for h_factor in height_factors:
+                total_h = int(target_size * h_factor)
+                if total_h < 100:
+                    continue
+                for f in [x / 100.0 for x in range(30, 71, 2)]:
+                    h_big = int(total_h * f) - gap // 2
+                    h_small = total_h - h_big - gap
+                    total_w = target_size
+                    for split_h in [x / 100.0 for x in range(25, 76, 5)]:
+                        w_s0 = int(total_w * split_h) - gap // 2
+                        w_s1 = total_w - w_s0 - gap
+                        if h_big < 50 or h_small < 50 or w_s0 < 50 or w_s1 < 50:
+                            continue
+                        cw, ch = _clamp_ar(total_w, total_h)
+                        cells = [
+                            (0, 0, total_w, h_big, big_idx),
+                            (0, h_big + gap, w_s0, h_small, small_indices[0]),
+                            (w_s0 + gap, h_big + gap, w_s1, h_small, small_indices[1]),
+                        ]
+                        sc = score_layout(images, cells, cw, ch)
+                        if sc < best_score:
+                            best_score = sc
+                            best_layout = {"type": "1big_2small_TB", "width": total_w, "height": total_h, "gap": gap, "cells": cells}
 
     elif n == 4:
-        cell_w = (target_size - gap) // 2
-        cell_h = (target_size - gap) // 2
-        cells = []
-        for idx in range(4):
-            r, c = divmod(idx, 2)
-            cells.append((c * (cell_w + gap), r * (cell_h + gap), cell_w, cell_h, idx))
-        sc = score_layout(images, cells, target_size, target_size)
-        if sc < best_score:
-            best_score = sc
-            best_layout = {"type": "grid_2x2", "width": target_size, "height": target_size, "gap": gap, "cells": cells}
+        # Sweep canvas height to find best fit for the 4 images
+        for h_factor in height_factors:
+            total_h = int(target_size * h_factor)
+            if total_h < 100:
+                continue
+            cell_w = (target_size - gap) // 2
+            cell_h = (total_h - gap) // 2
+            if cell_w < 50 or cell_h < 50:
+                continue
+            cw, ch = _clamp_ar(target_size, total_h)
+            cells = []
+            for idx in range(4):
+                r, c = divmod(idx, 2)
+                cells.append((c * (cell_w + gap), r * (cell_h + gap), cell_w, cell_h, idx))
+            sc = score_layout(images, cells, cw, ch)
+            if sc < best_score:
+                best_score = sc
+                best_layout = {"type": "grid_2x2", "width": target_size, "height": total_h, "gap": gap, "cells": cells}
 
     else:
+        # For N>4, derive row height from average image aspect ratio
+        avg_ar = sum(img.width / img.height for img in images) / n
         cols = round(math.sqrt(n))
         rows = math.ceil(n / cols)
         cell_w = (target_size - gap * (cols - 1)) // cols
-        cell_h = (target_size - gap * (rows - 1)) // rows
+        cell_h = max(int(cell_w / avg_ar), 50)
         total_h = cell_h * rows + gap * (rows - 1)
+        cw, ch = _clamp_ar(target_size, total_h)
         cells = []
         for idx in range(n):
             r = idx // cols
