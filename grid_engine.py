@@ -8,9 +8,13 @@ Photo Grid Engine
 import os
 import math
 import glob
+import logging
 import requests
+import concurrent.futures
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
+
+logger = logging.getLogger("photo-grid-api")
 
 
 def download_image(url: str, timeout: int = 30) -> Image.Image:
@@ -326,12 +330,20 @@ def generate_grid(
     Main entry point. Downloads photos, builds grid, returns JPEG bytes.
     """
     images = []
-    for url in photo_urls:
-        img = download_image(url)
-        images.append(img)
+    
+    # Use ThreadPoolExecutor for concurrent downloads
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, max(1, len(photo_urls)))) as executor:
+        # Keep original order while downloading concurrently
+        futures = [executor.submit(download_image, url) for url in photo_urls]
+        for future in futures:
+            try:
+                img = future.result()
+                images.append(img)
+            except Exception as e:
+                logger.warning(f"Failed to download image: {e}")
 
     if not images:
-        raise ValueError("No images provided")
+        raise ValueError("All images failed to download or no images provided")
 
     layout = find_best_layout(images, target_size)
     canvas = render_grid(images, layout)
