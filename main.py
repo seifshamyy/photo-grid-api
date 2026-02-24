@@ -114,7 +114,7 @@ async def health():
         500: {"description": "Processing error"},
     },
 )
-async def generate_single(item: GridItem):
+def generate_single(item: GridItem):
     """
     Generate a single photo grid. Returns the JPEG image directly.
     """
@@ -148,7 +148,7 @@ async def generate_single(item: GridItem):
 
 
 @app.post("/generate/batch", response_model=list[BatchResultItem])
-async def generate_batch(req: BatchRequest):
+def generate_batch(req: BatchRequest):
     """
     Generate grids for multiple items. Returns JSON with base64-encoded images.
     """
@@ -184,7 +184,7 @@ async def generate_batch(req: BatchRequest):
         200: {"content": {"application/json": {}}, "description": "Generated grid as base64"},
     },
 )
-async def generate_single_json(item: GridItem):
+def generate_single_json(item: GridItem):
     """
     Generate a single photo grid. Returns JSON with base64-encoded image.
     Useful for n8n / Make / webhook integrations.
